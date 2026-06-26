@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RotaAnimada - Crie vídeos incríveis das suas viagens</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- MapLibre GL CSS -->
+    <link href="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.css" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Sidebar de Controles -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo-container">
+            <svg class="logo-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            <h1>Rota<span>Animada</span></h1>
+          </div>
+          <p class="subtitle">Transforme seu trajeto em um vídeo incrível</p>
+        </div>
+
+        <div class="sidebar-content">
+          <!-- Seção 1: O Roteiro -->
+          <section class="config-section">
+            <h2 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+              1. Roteiro da Viagem
+            </h2>
+            
+            <div id="stops-container" class="stops-container">
+              <!-- As paradas serão inseridas dinamicamente via JS -->
+            </div>
+
+            <button id="btn-add-stop" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Adicionar Parada
+            </button>
+            
+            <button id="btn-calculate-route" class="btn btn-primary" style="margin-top: 10px; width: 100%;">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+              Calcular Rota
+            </button>
+          </section>
+
+          <!-- Seção 2: Veículo (Avatar) -->
+          <section class="config-section">
+            <h2 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+              2. Veículo & Avatar
+            </h2>
+
+            <div class="avatar-presets">
+              <button class="avatar-preset active" data-preset="motorcycle" title="Motocicleta">🏍️</button>
+              <button class="avatar-preset" data-preset="car" title="Carro">🚗</button>
+              <button class="avatar-preset" data-preset="airplane" title="Avião">✈️</button>
+              <button class="avatar-preset" data-preset="van" title="Kombi/Van">🚐</button>
+              <button class="avatar-preset" data-preset="custom" title="Customizado">📁</button>
+            </div>
+
+            <div id="custom-avatar-container" class="custom-avatar-container hidden">
+              <label for="input-avatar-file" class="file-upload-label">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span>Escolher foto (PNG transparente)</span>
+              </label>
+              <input type="file" id="input-avatar-file" accept="image/*" class="hidden-input">
+              <div id="avatar-preview-name" class="avatar-preview-name"></div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-avatar-style-mode">Estilo de Exibição do Avatar</label>
+              <select id="select-avatar-style-mode">
+                <option value="3d" selected>3D (Em pé / De frente para a câmera)</option>
+                <option value="2d">2D (Deitado sobre o mapa)</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label for="slider-avatar-size">Tamanho do Veículo</label>
+              <div class="slider-container">
+                <input type="range" id="slider-avatar-size" min="20" max="100" value="48">
+                <span id="val-avatar-size">48px</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Seção 3: Estilo & Câmera -->
+          <section class="config-section">
+            <h2 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+              3. Visual & Câmera
+            </h2>
+
+            <div class="control-group">
+              <label for="select-map-style">Estilo do Mapa</label>
+              <select id="select-map-style">
+                <option value="voyager">Viagem Clássico (Claro)</option>
+                <option value="dark" selected>Modo Escuro Premium (Escuro)</option>
+                <option value="positron">Modo Mínimo (Branco)</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label for="slider-route-speed">Duração da Viagem (segundos)</label>
+              <div class="slider-container">
+                <input type="range" id="slider-route-speed" min="5" max="60" value="15">
+                <span id="val-route-speed">15s</span>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="slider-camera-pitch">Inclinação da Câmera (3D)</label>
+              <div class="slider-container">
+                <input type="range" id="slider-camera-pitch" min="0" max="60" value="45">
+                <span id="val-camera-pitch">45°</span>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="slider-camera-zoom">Zoom da Câmera</label>
+              <div class="slider-container">
+                <input type="range" id="slider-camera-zoom" min="5" max="18" step="0.5" value="10.5">
+                <span id="val-camera-zoom">10.5</span>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="color-route-line">Cor da Linha do Trajeto</label>
+              <div class="color-picker-container">
+                <input type="color" id="color-route-line" value="#ff4757">
+                <input type="text" id="text-route-line-color" value="#ff4757" readonly>
+              </div>
+            </div>
+
+            <div class="control-group-checkbox" style="margin-top: -5px; margin-bottom: 15px;">
+              <input type="checkbox" id="check-rainbow-route">
+              <label for="check-rainbow-route">Linha do Trajeto Arco-Íris (Rainbow)</label>
+            </div>
+
+            <div class="control-group-checkbox">
+              <input type="checkbox" id="check-rotate-camera" checked>
+              <label for="check-rotate-camera">Rotacionar mapa no sentido da rota</label>
+            </div>
+          </section>
+
+          <!-- Seção 4: Exportar -->
+          <section class="config-section">
+            <h2 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+              4. Exportação
+            </h2>
+
+            <div class="control-group">
+              <label for="select-video-format">Formato / Proporção</label>
+              <select id="select-video-format">
+                <option value="vertical" selected>Vertical 9:16 (Instagram Reels / TikTok)</option>
+                <option value="horizontal">Horizontal 16:9 (YouTube / TV)</option>
+                <option value="square">Quadrado 1:1 (Feed/Posts)</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label for="input-video-title">Título do Vídeo</label>
+              <input type="text" id="input-video-title" class="stop-input" value="Minha Viagem dos Sonhos" style="background: var(--bg-tertiary);">
+            </div>
+
+            <div class="control-group-checkbox">
+              <input type="checkbox" id="check-overlay-info" checked>
+              <label for="check-overlay-info">Incluir HUD (Informações da viagem no vídeo)</label>
+            </div>
+
+            <div class="control-group-checkbox">
+              <input type="checkbox" id="check-show-compass" checked>
+              <label for="check-show-compass">Incluir Bússola no vídeo e preview</label>
+            </div>
+
+            <div class="control-group-checkbox">
+              <input type="checkbox" id="check-show-summary" checked>
+              <label for="check-show-summary">Incluir Tela Final de Resumo</label>
+            </div>
+
+
+            <div class="action-buttons">
+              <button id="btn-preview" class="btn btn-secondary">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Visualizar
+              </button>
+              <button id="btn-record" class="btn btn-accent">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3" fill="currentColor"></circle></svg>
+                Gerar Vídeo
+              </button>
+            </div>
+
+            <!-- Overlay de progresso da gravação -->
+            <div id="recording-status" class="recording-status hidden">
+              <div class="spinner"></div>
+              <div class="status-text-container">
+                <p class="status-title">Gravando Vídeo...</p>
+                <p class="status-desc">Aguarde o veículo finalizar o percurso.</p>
+                <div class="progress-bar-bg">
+                  <div id="recording-progress" class="progress-bar-fill" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- Área do Mapa & Gravação -->
+      <main class="map-area">
+        <div class="preview-resolution-badge" id="resolution-badge">Proporção: 9:16 (Vertical)</div>
+        
+        <div class="map-viewport-wrapper">
+          <div id="map-container" class="aspect-vertical">
+            <div id="map"></div>
+            <!-- Bússola flutuante de preview -->
+            <div class="preview-compass" id="preview-compass">
+              <div class="compass-dial">
+                <span class="compass-label north">N</span>
+                <span class="compass-label south">S</span>
+                <span class="compass-label east">L</span>
+                <span class="compass-label west">O</span>
+                <div class="compass-needle" id="compass-needle"></div>
+              </div>
+            </div>
+            <!-- Polaroid de fotos de paradas no preview -->
+            <div class="photo-popup-card hidden" id="photo-popup-card"></div>
+            <!-- Tela Final de Resumo no preview -->
+            <div class="summary-card-overlay hidden" id="summary-card-overlay">
+              <div class="summary-card-inner">
+                <h2 id="summary-title">Minha Viagem dos Sonhos</h2>
+                <div class="summary-stats">
+                  <div class="stat-item">
+                    <span class="stat-val" id="summary-stat-stops">0</span>
+                    <span class="stat-label">Paradas</span>
+                  </div>
+                  <div class="stat-item">
+                    <span class="stat-val" id="summary-stat-duration">-</span>
+                    <span class="stat-label">Percurso</span>
+                  </div>
+                </div>
+                <div class="summary-collage" id="summary-collage"></div>
+              </div>
+            </div>
+
+            <!-- Canvas de gravação e pré-visualização (combina o mapa + overlays de HUD) -->
+            <canvas id="hidden-recording-canvas" class="recording-canvas hidden"></canvas>
+          </div>
+        </div>
+      </main>
+    </div>
+    
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
