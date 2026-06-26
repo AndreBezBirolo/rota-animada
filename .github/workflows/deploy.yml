@@ -15,7 +15,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Etapa 1: Testes ────────────────────────────────────────────────────────
+  test:
+    name: Testes Unitários
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Executar testes
+        run: npm test
+
+  # ── Etapa 2: Build e Deploy (só roda se os testes passarem) ───────────────
   build-and-deploy:
+    name: Build e Deploy
+    needs: test          # depende do job "test" — falha se os testes falharem
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -31,7 +55,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Instalar dependências
         run: npm install
 
       - name: Build

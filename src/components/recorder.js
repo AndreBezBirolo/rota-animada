@@ -69,7 +69,14 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
           });
 
           const encoder = new VideoEncoder({
-            output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+            output: (chunk, meta) => {
+              // meta contém decoderConfig apenas em keyframes — protege contra null
+              try {
+                muxer.addVideoChunk(chunk, meta ?? undefined);
+              } catch (e) {
+                console.warn('addVideoChunk error (ignorado):', e.message);
+              }
+            },
             error: (e) => console.error('VideoEncoder error:', e),
           });
 
@@ -141,10 +148,15 @@ export function captureRecordingFrame(state) {
   if (state.videoEncoder.state !== 'configured') return;
 
   const canvas = document.getElementById('hidden-recording-canvas');
-  const timestampMicros = state.recordingFrameIndex * Math.round(1_000_000 / 30);
+  const FRAME_DURATION = Math.round(1_000_000 / 30); // microssegundos por frame a 30fps
+  const timestampMicros = state.recordingFrameIndex * FRAME_DURATION;
   try {
-    const frame = new VideoFrame(canvas, { timestamp: timestampMicros });
-    const keyFrame = state.recordingFrameIndex % 30 === 0;
+    const frame = new VideoFrame(canvas, {
+      timestamp: timestampMicros,
+      duration: FRAME_DURATION,  // obrigatório para mp4-muxer calcular timestamps
+    });
+    // Primeiro frame DEVE ser keyframe para que o decoderConfig seja gerado
+    const keyFrame = state.recordingFrameIndex === 0 || state.recordingFrameIndex % 60 === 0;
     state.videoEncoder.encode(frame, { keyFrame });
     frame.close();
     state.recordingFrameIndex++;
