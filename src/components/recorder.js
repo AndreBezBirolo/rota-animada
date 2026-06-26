@@ -61,20 +61,34 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
       try {
         const codec = await findSupportedH264Codec(width, height);
         if (codec) {
+          const FRAME_DURATION_MICROS = Math.round(1_000_000 / 30); // ~33333 μs a 30fps
+          state.frameDurationMicros = FRAME_DURATION_MICROS;
+
           const target = new ArrayBufferTarget();
           const muxer = new Muxer({
             target,
             video: { codec: 'avc', width, height },
             fastStart: 'in-memory',
+            // Faz o muxer compensar automaticamente o DTS não-zero do encoder
+            // (timestamps relativos ao documento, não ao início da gravação)
+            firstTimestampBehavior: 'offset',
           });
 
           const encoder = new VideoEncoder({
             output: (chunk, meta) => {
-              // meta contém decoderConfig apenas em keyframes — protege contra null
               try {
-                muxer.addVideoChunk(chunk, meta ?? undefined);
+                // Usa addVideoChunkRaw para garantir uma duration válida
+                // mesmo quando EncodedVideoChunk.duration é null (alguns browsers)
+                const data = new Uint8Array(chunk.byteLength);
+                chunk.copyTo(data);
+                const duration = (chunk.duration != null && chunk.duration > 0)
+                  ? chunk.duration
+                  : FRAME_DURATION_MICROS;
+                muxer.addVideoChunkRaw(
+                  data, chunk.type, chunk.timestamp, duration, meta ?? undefined
+                );
               } catch (e) {
-                console.warn('addVideoChunk error (ignorado):', e.message);
+                console.warn('addVideoChunk error:', e.message);
               }
             },
             error: (e) => console.error('VideoEncoder error:', e),
