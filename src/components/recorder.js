@@ -5,16 +5,16 @@ import { getCityName, getCurrentRouteDetails, calculateTotalTravelTime } from '.
 // Tenta encontrar um codec H.264 suportado pelo VideoEncoder
 async function findSupportedH264Codec(width, height) {
   const candidates = [
+    'avc1.42E034', // Baseline Level 5.2 (No B-frames, avoids DTS out of order warnings)
+    'avc1.42001f', // Baseline Level 3.1 (No B-frames, avoids DTS out of order warnings)
     'avc1.640034', // High Profile Level 5.2
     'avc1.64002a', // High Profile Level 4.2
     'avc1.4d0034', // Main Profile Level 5.2
-    'avc1.42E034', // Baseline Level 5.2
-    'avc1.42001f', // Baseline Level 3.1
   ];
   for (const codec of candidates) {
     try {
       const { supported } = await VideoEncoder.isConfigSupported({
-        codec, width, height, bitrate: 10_000_000, framerate: 30,
+        codec, width, height, bitrate: 16_000_000, framerate: 60,
       });
       if (supported) return codec;
     } catch { /* continua */ }
@@ -61,13 +61,13 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
       try {
         const codec = await findSupportedH264Codec(width, height);
         if (codec) {
-          const FRAME_DURATION_MICROS = Math.round(1_000_000 / 30); // ~33333 μs a 30fps
+          const FRAME_DURATION_MICROS = Math.round(1_000_000 / 60); // ~16667 μs a 60fps
           state.frameDurationMicros = FRAME_DURATION_MICROS;
 
           const target = new ArrayBufferTarget();
           const muxer = new Muxer({
             target,
-            video: { codec: 'avc', width, height },
+            video: { codec: 'avc', width, height, frameRate: 60 },
             fastStart: 'in-memory',
             // Faz o muxer compensar automaticamente o DTS não-zero do encoder
             // (timestamps relativos ao documento, não ao início da gravação)
@@ -98,8 +98,8 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
             codec,
             width,
             height,
-            bitrate: 12_000_000, // 12 Mbps — alta qualidade
-            framerate: 30,
+            bitrate: 16_000_000, // 16 Mbps — alta qualidade
+            framerate: 60,
             latencyMode: 'quality',
           });
 
@@ -116,7 +116,7 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
 
     // ---- Fallback: MediaRecorder (WebM) com bitrate alto ----
     if (!state.isMP4Mode) {
-      const stream = hiddenCanvas.captureStream(30);
+      const stream = hiddenCanvas.captureStream(60);
       let options = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 10_000_000 };
       if (!MediaRecorder.isTypeSupported(options.mimeType)) {
         options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 10_000_000 };
@@ -162,7 +162,8 @@ export function captureRecordingFrame(state) {
   if (state.videoEncoder.state !== 'configured') return;
 
   const canvas = document.getElementById('hidden-recording-canvas');
-  const FRAME_DURATION = Math.round(1_000_000 / 30); // microssegundos por frame a 30fps
+  const FPS = 60;
+  const FRAME_DURATION = Math.round(1_000_000 / FPS); // microssegundos por frame a 60fps
   const timestampMicros = state.recordingFrameIndex * FRAME_DURATION;
   try {
     const frame = new VideoFrame(canvas, {
@@ -170,7 +171,7 @@ export function captureRecordingFrame(state) {
       duration: FRAME_DURATION,  // obrigatório para mp4-muxer calcular timestamps
     });
     // Primeiro frame DEVE ser keyframe para que o decoderConfig seja gerado
-    const keyFrame = state.recordingFrameIndex === 0 || state.recordingFrameIndex % 60 === 0;
+    const keyFrame = state.recordingFrameIndex === 0 || state.recordingFrameIndex % 120 === 0;
     state.videoEncoder.encode(frame, { keyFrame });
     frame.close();
     state.recordingFrameIndex++;

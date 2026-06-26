@@ -244,8 +244,14 @@ function animateFrame() {
   if (!state.isAnimating) return;
 
   try {
-    const now = performance.now();
-    const elapsed = (now - state.animationStartTime) / 1000;
+    const FPS = 60;
+    let elapsed;
+    if (state.isRecording) {
+      elapsed = state.recordingFrameIndex / FPS;
+    } else {
+      const now = performance.now();
+      elapsed = (now - state.animationStartTime) / 1000;
+    }
 
     const totalDuration = state.introDuration + state.routeDuration + state.outroDuration + (state.showSummary ? state.summaryDuration : 0);
     const progressPercent = Math.min(elapsed / totalDuration, 1.0);

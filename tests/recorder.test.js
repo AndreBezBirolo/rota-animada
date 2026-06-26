@@ -13,14 +13,14 @@ const sanitizeFilename = (name) =>
     .replace(/-+/g, '-')
     .toLowerCase();
 
-/** Calcula o timestamp em microssegundos dado o índice do frame a 30fps */
-const frameTimestamp = (index) => index * Math.round(1_000_000 / 30);
+/** Calcula o timestamp em microssegundos dado o índice do frame a 60fps */
+const frameTimestamp = (index) => index * Math.round(1_000_000 / 60);
 
-/** Duração de cada frame em microssegundos a 30fps */
-const FRAME_DURATION = Math.round(1_000_000 / 30); // ≈ 33333 μs
+/** Duração de cada frame em microssegundos a 60fps */
+const FRAME_DURATION = Math.round(1_000_000 / 60); // ≈ 16667 μs
 
 /** Determina se o frame no índice dado deve ser um keyframe */
-const isKeyFrame = (index) => index === 0 || index % 60 === 0;
+const isKeyFrame = (index) => index === 0 || index % 120 === 0;
 
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -51,19 +51,19 @@ describe('Recorder - sanitizeFilename', () => {
   });
 });
 
-describe('Recorder - timestamps de frames a 30fps', () => {
+describe('Recorder - timestamps de frames a 60fps', () => {
   it('frame 0 tem timestamp 0 μs', () => {
     expect(frameTimestamp(0)).toBe(0);
   });
 
-  it('frame 1 tem timestamp ~33333 μs', () => {
+  it('frame 1 tem timestamp ~16667 μs', () => {
     expect(frameTimestamp(1)).toBe(FRAME_DURATION);
   });
 
-  it('frame 30 tem timestamp ~1 segundo (1 000 000 μs)', () => {
-    expect(frameTimestamp(30)).toBe(30 * FRAME_DURATION);
-    expect(frameTimestamp(30)).toBeGreaterThanOrEqual(999_990);
-    expect(frameTimestamp(30)).toBeLessThanOrEqual(1_000_010);
+  it('frame 60 tem timestamp ~1 segundo (1 000 000 μs)', () => {
+    expect(frameTimestamp(60)).toBe(60 * FRAME_DURATION);
+    expect(frameTimestamp(60)).toBeGreaterThanOrEqual(999_990);
+    expect(frameTimestamp(60)).toBeLessThanOrEqual(1_000_030);
   });
 
   it('a duração de cada frame é positiva', () => {
@@ -83,16 +83,16 @@ describe('Recorder - lógica de keyframe', () => {
     expect(isKeyFrame(0)).toBe(true);
   });
 
-  it('frame 60 é keyframe (intervalo de 60 frames = 2s a 30fps)', () => {
-    expect(isKeyFrame(60)).toBe(true);
-  });
-
-  it('frame 120 é keyframe', () => {
+  it('frame 120 é keyframe (intervalo de 120 frames = 2s a 60fps)', () => {
     expect(isKeyFrame(120)).toBe(true);
   });
 
+  it('frame 240 é keyframe', () => {
+    expect(isKeyFrame(240)).toBe(true);
+  });
+
   it('frames intermediários NÃO são keyframes', () => {
-    [1, 2, 29, 30, 31, 59, 61, 90, 119].forEach(idx => {
+    [1, 2, 59, 60, 61, 119, 121, 180, 239].forEach(idx => {
       expect(isKeyFrame(idx)).toBe(false);
     });
   });
