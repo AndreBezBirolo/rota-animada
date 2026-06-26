@@ -16,6 +16,7 @@ import {
 import {
   startVideoRecording,
   stopVideoRecording,
+  captureRecordingFrame,
   drawRecordingFrame
 } from './components/recorder.js';
 import { initUI, renderStops } from './components/ui.js';
@@ -475,6 +476,8 @@ function animateFrame() {
       const isIntro = elapsed < state.introDuration;
       const isSummaryPhase = state.showSummary && (elapsed >= state.introDuration + state.routeDuration + state.outroDuration);
       drawRecordingFrame(state, currentCoords, targetBearing, travelProgress, isIntro, activePhotos, activePhotoCity, isSummaryPhase);
+      // Captura frame para o encoder MP4 (no-op para WebM/preview)
+      if (state.isRecording) captureRecordingFrame(state);
     }
 
     // Continua ou finaliza a animação
@@ -482,10 +485,10 @@ function animateFrame() {
       state.animationFrameId = requestAnimationFrame(animateFrame);
     } else {
       state.isAnimating = false;
-      setTimeout(() => {
+      setTimeout(async () => {
         cleanupAnimationState();
         if (state.isRecording) {
-          stopVideoRecording(state);
+          await stopVideoRecording(state);
         } else {
           state.isPreviewMode = false;
           alert('Visualização concluída com sucesso!');

@@ -1,5 +1,26 @@
 // Módulo de Gravação e Composição do Canvas de Vídeo
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { getCityName, getCurrentRouteDetails, calculateTotalTravelTime } from '../utils/helpers.js';
+
+// Tenta encontrar um codec H.264 suportado pelo VideoEncoder
+async function findSupportedH264Codec(width, height) {
+  const candidates = [
+    'avc1.640034', // High Profile Level 5.2
+    'avc1.64002a', // High Profile Level 4.2
+    'avc1.4d0034', // Main Profile Level 5.2
+    'avc1.42E034', // Baseline Level 5.2
+    'avc1.42001f', // Baseline Level 3.1
+  ];
+  for (const codec of candidates) {
+    try {
+      const { supported } = await VideoEncoder.isConfigSupported({
+        codec, width, height, bitrate: 10_000_000, framerate: 30,
+      });
+      if (supported) return codec;
+    } catch { /* continua */ }
+  }
+  return null;
+}
 
 export async function startVideoRecording(state, updateVehiclePreviewMarker, animateFrame) {
   try {
@@ -10,6 +31,8 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
 
     state.recordedChunks = [];
     state.isRecording = true;
+    state.isMP4Mode = false;
+    state.recordingFrameIndex = 0;
 
     const recStatus = document.getElementById('recording-status');
     recStatus.classList.remove('hidden');
@@ -31,35 +54,68 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
     hiddenCanvas.classList.remove('hidden');
 
     const previewCompass = document.getElementById('preview-compass');
-    if (previewCompass) {
-      previewCompass.classList.add('hidden');
-    }
+    if (previewCompass) previewCompass.classList.add('hidden');
 
-    const stream = hiddenCanvas.captureStream(30);
+    // ---- Tenta gravar em MP4 via WebCodecs API (VideoEncoder + mp4-muxer) ----
+    if (typeof VideoEncoder !== 'undefined') {
+      try {
+        const codec = await findSupportedH264Codec(width, height);
+        if (codec) {
+          const target = new ArrayBufferTarget();
+          const muxer = new Muxer({
+            target,
+            video: { codec: 'avc', width, height },
+            fastStart: 'in-memory',
+          });
 
-    // Configura opções de codificação sem canais de áudio (opus) já que a stream do canvas é somente vídeo
-    let options = { mimeType: 'video/webm;codecs=vp9' };
-    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-      options = { mimeType: 'video/webm;codecs=vp8' };
-    }
-    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-      options = { mimeType: 'video/webm' };
-    }
+          const encoder = new VideoEncoder({
+            output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+            error: (e) => console.error('VideoEncoder error:', e),
+          });
 
-    state.mediaRecorder = new MediaRecorder(stream, options);
-    state.mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        state.recordedChunks.push(e.data);
+          encoder.configure({
+            codec,
+            width,
+            height,
+            bitrate: 12_000_000, // 12 Mbps — alta qualidade
+            framerate: 30,
+            latencyMode: 'quality',
+          });
+
+          state.videoEncoder = encoder;
+          state.muxer = muxer;
+          state.muxerTarget = target;
+          state.isMP4Mode = true;
+          console.log(`Gravando em MP4/H.264 (${codec}) @ 12 Mbps`);
+        }
+      } catch (e) {
+        console.warn('VideoEncoder falhou, usando fallback WebM:', e);
       }
-    };
+    }
 
-    state.mediaRecorder.onerror = (e) => {
-      console.error("MediaRecorder error:", e.error || e);
-      alert("Erro na gravação (MediaRecorder): " + (e.error ? e.error.message : "Código de mídia não suportado"));
-    };
+    // ---- Fallback: MediaRecorder (WebM) com bitrate alto ----
+    if (!state.isMP4Mode) {
+      const stream = hiddenCanvas.captureStream(30);
+      let options = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 10_000_000 };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 10_000_000 };
+      }
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm', videoBitsPerSecond: 10_000_000 };
+      }
 
-    state.mediaRecorder.onstop = () => saveVideoFile(state);
-    state.mediaRecorder.start();
+      state.mediaRecorder = new MediaRecorder(stream, options);
+      state.mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) state.recordedChunks.push(e.data);
+      };
+      state.mediaRecorder.onerror = (e) => {
+        console.error('MediaRecorder error:', e.error || e);
+        alert('Erro na gravação: ' + (e.error ? e.error.message : 'codec não suportado'));
+      };
+      state.mediaRecorder.onstop = () => saveVideoFile(state);
+      state.mediaRecorder.start();
+      console.log('Gravando em WebM via MediaRecorder @ 10 Mbps');
+    }
 
     state.isAnimating = true;
     state.animationStartTime = performance.now();
@@ -71,87 +127,118 @@ export async function startVideoRecording(state, updateVehiclePreviewMarker, ani
     }
     animateFrame();
   } catch (err) {
-    console.error("Error starting video recording:", err);
-    alert("Erro ao iniciar a gravação do vídeo: " + err.message);
+    console.error('Error starting video recording:', err);
+    alert('Erro ao iniciar a gravação do vídeo: ' + err.message);
     state.isRecording = false;
     const recStatus = document.getElementById('recording-status');
     if (recStatus) recStatus.classList.add('hidden');
   }
 }
 
-export function stopVideoRecording(state) {
+// Captura o frame atual do canvas e envia ao encoder (só no modo MP4)
+export function captureRecordingFrame(state) {
+  if (!state.isRecording || !state.isMP4Mode || !state.videoEncoder) return;
+  if (state.videoEncoder.state !== 'configured') return;
+
+  const canvas = document.getElementById('hidden-recording-canvas');
+  const timestampMicros = state.recordingFrameIndex * Math.round(1_000_000 / 30);
   try {
-    console.log("stopVideoRecording: stopping media recorder. State:", state.mediaRecorder ? state.mediaRecorder.state : "null");
-    if (state.mediaRecorder) {
+    const frame = new VideoFrame(canvas, { timestamp: timestampMicros });
+    const keyFrame = state.recordingFrameIndex % 30 === 0;
+    state.videoEncoder.encode(frame, { keyFrame });
+    frame.close();
+    state.recordingFrameIndex++;
+  } catch (e) {
+    console.error('captureRecordingFrame error:', e);
+  }
+}
+
+export async function stopVideoRecording(state) {
+  try {
+    if (state.isMP4Mode && state.videoEncoder) {
+      // Flush todos os frames pendentes e finaliza o muxer
+      await state.videoEncoder.flush();
+      state.muxer.finalize();
+      const buffer = state.muxerTarget.buffer;
+      state.videoEncoder.close();
+      state.videoEncoder = null;
+      state.muxer = null;
+      state.muxerTarget = null;
+      state.isMP4Mode = false;
+      saveMP4File(state, buffer);
+    } else if (state.mediaRecorder) {
       if (state.mediaRecorder.state === 'recording' || state.mediaRecorder.state === 'paused') {
         state.mediaRecorder.stop();
       } else {
-        console.warn("stopVideoRecording: mediaRecorder is already inactive, invoking saveVideoFile manually");
         saveVideoFile(state);
       }
     } else {
-      console.warn("stopVideoRecording: mediaRecorder is falsy");
       state.isRecording = false;
       const recStatus = document.getElementById('recording-status');
       if (recStatus) recStatus.classList.add('hidden');
     }
   } catch (err) {
-    console.error("Error stopping MediaRecorder:", err);
-    alert("Erro ao parar a gravação de vídeo: " + err.message);
+    console.error('Error stopping recording:', err);
+    alert('Erro ao parar a gravação: ' + err.message);
     state.isRecording = false;
     const recStatus = document.getElementById('recording-status');
     if (recStatus) recStatus.classList.add('hidden');
   }
 }
 
+const sanitizeFilename = (name) =>
+  name.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/gi, '')
+    .replace(/-+/g, '-')
+    .toLowerCase();
+
+function triggerDownload(url, filename) {
+  const a = document.createElement('a');
+  document.body.appendChild(a);
+  a.style = 'display: none';
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => { window.URL.revokeObjectURL(url); a.remove(); }, 10000);
+}
+
+function saveMP4File(state, buffer) {
+  state.isRecording = false;
+  state.isPreviewMode = false;
+  const recStatus = document.getElementById('recording-status');
+  if (recStatus) recStatus.classList.add('hidden');
+
+  const blob = new Blob([buffer], { type: 'video/mp4' });
+  const url = URL.createObjectURL(blob);
+  const startCity = sanitizeFilename(getCityName(state.stops[0].value)) || 'inicio';
+  const endCity = sanitizeFilename(getCityName(state.stops[state.stops.length - 1].value)) || 'fim';
+  triggerDownload(url, `rota-${startCity}-para-${endCity}.mp4`);
+  alert('Seu vídeo de viagem animada foi gerado e baixado com sucesso! (.mp4)');
+}
+
 export function saveVideoFile(state) {
   try {
-    console.log("saveVideoFile: saving video, chunks count:", state.recordedChunks ? state.recordedChunks.length : 0);
     state.isRecording = false;
     state.isPreviewMode = false;
-
     const recStatus = document.getElementById('recording-status');
     if (recStatus) recStatus.classList.add('hidden');
 
     if (!state.recordedChunks || state.recordedChunks.length === 0) {
-      console.error("saveVideoFile: state.recordedChunks is empty!");
-      alert("Nenhum fragmento de vídeo foi gravado. A gravação falhou.");
+      alert('Nenhum fragmento de vídeo foi gravado. A gravação falhou.');
       return;
     }
 
     const blob = new Blob(state.recordedChunks, { type: 'video/webm' });
     const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    document.body.appendChild(a);
-    a.style = 'display: none';
-    a.href = url;
-
-    const sanitizeFilename = (name) => {
-      return name
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/[^a-z0-9-]/gi, '')
-        .replace(/-+/g, '-')
-        .toLowerCase();
-    };
-
     const startCity = sanitizeFilename(getCityName(state.stops[0].value)) || 'inicio';
     const endCity = sanitizeFilename(getCityName(state.stops[state.stops.length - 1].value)) || 'fim';
-    a.download = `rota-${startCity}-para-${endCity}.webm`;
-
-    a.click();
-
-    setTimeout(() => {
-      window.URL.revokeObjectURL(url);
-      a.remove();
-    }, 10000);
-
-    alert('Seu vídeo de viagem animada foi gerado e baixado com sucesso!');
+    triggerDownload(url, `rota-${startCity}-para-${endCity}.webm`);
+    alert('Seu vídeo de viagem animada foi gerado e baixado com sucesso! (.webm)');
   } catch (err) {
-    console.error("Error saving video file:", err);
-    alert("Erro ao salvar o arquivo de vídeo: " + err.message);
+    console.error('Error saving video file:', err);
+    alert('Erro ao salvar o arquivo de vídeo: ' + err.message);
   }
 }
 
